@@ -5,6 +5,7 @@ QRForge - FastAPI Backend for QR Code Generation
 import os
 import uuid
 import re
+import sqlite3
 from datetime import datetime
 from typing import Optional, Literal
 from pathlib import Path
@@ -47,9 +48,12 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS
+CORS_ORIGINS_ENV = os.getenv("CORS_ORIGINS", "http://localhost:3001,http://localhost:8081")
+cors_origins = [origin.strip() for origin in CORS_ORIGINS_ENV.split(",")] if CORS_ORIGINS_ENV else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if APP_ENV == "development" else ["http://localhost:3000", "http://localhost:8080"],
+    allow_origins=["*"] if APP_ENV == "development" else cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -97,8 +101,23 @@ class HistoryItem(BaseModel):
     generated_at: str
 
 
-# In-memory history storage (replace with SQLite for persistence)
-history_storage: list[HistoryItem] = []
+# SQLite database initialization
+DB_PATH = GENERATED_DIR / "history.db"
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS history (
+                id TEXT PRIMARY KEY,
+                content TEXT,
+                filename TEXT,
+                format TEXT,
+                generated_at TEXT
+            )
+        ''')
+        conn.commit()
+
+init_db()
 
 
 # Helper functions
@@ -187,17 +206,20 @@ def generate_qr_svg(request: QRGenerateRequest) -> str:
 def add_to_history(content: str, filename: str, format: str):
     """Add entry to history storage."""
     if ENABLE_HISTORY:
-        item = HistoryItem(
-            id=uuid.uuid4().hex,
-            content=content[:100] + "..." if len(content) > 100 else content,
-            filename=filename,
-            format=format,
-            generated_at=datetime.utcnow().isoformat(),
-        )
-        history_storage.insert(0, item)
-        # Keep only last 50 items
-        if len(history_storage) > 50:
-            history_storage.pop()
+        item_id = uuid.uuid4().hex
+        truncated_content = content[:100] + "..." if len(content) > 100 else content
+        generated_at = datetime.utcnow().isoformat()
+        
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO history (id, content, filename, format, generated_at) VALUES (?, ?, ?, ?, ?)",
+                (item_id, truncated_content, filename, format, generated_at)
+            )
+            # Keep only last 50 items
+            conn.execute(
+                "DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY generated_at DESC LIMIT 50)"
+            )
+            conn.commit()
 
 
 # API Endpoints
@@ -249,14 +271,25 @@ async def get_history(request: Request, limit: int = Query(10, ge=1, le=50)):
     """Get recently generated QR codes (if history is enabled)."""
     if not ENABLE_HISTORY:
         return []
-    return history_storage[:limit]
+    
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT id, content, filename, format, generated_at FROM history ORDER BY generated_at DESC LIMIT ?",
+            (limit,)
+        )
+        rows = cursor.fetchall()
+        
+    return [HistoryItem(**dict(row)) for row in rows]
 
 
 @app.delete("/api/v1/qr/history", tags=["History"])
 @limiter.limit("10/minute")
 async def clear_history(request: Request):
     """Clear history storage."""
-    history_storage.clear()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM history")
+        conn.commit()
     return {"success": True, "message": "History cleared"}
 
 
