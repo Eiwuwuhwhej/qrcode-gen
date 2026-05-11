@@ -5,9 +5,9 @@ services:
       dockerfile: Dockerfile
     container_name: qrforge-backend
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_PORT:-8081}:8081"
     environment:
-      - APP_PORT=8080
+      - APP_PORT=8081
       - APP_ENV=${APP_ENV:-production}
       - ENABLE_HISTORY=${ENABLE_HISTORY:-true}
       - MAX_PAYLOAD_SIZE=${MAX_PAYLOAD_SIZE:-5000}
@@ -15,7 +15,7 @@ services:
     volumes:
       - qrforge-generated:/app/generated
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -33,9 +33,7 @@ services:
       dockerfile: Dockerfile
     container_name: qrforge-frontend
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
-    environment:
-      - VITE_API_URL=http://localhost:${APP_PORT:-8080}
+      - "${FRONTEND_PORT:-3001}:3001"
     depends_on:
       backend:
         condition: service_healthy
