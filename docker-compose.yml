@@ -1,0 +1,48 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: qrforge-backend
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      - APP_PORT=8080
+      - APP_ENV=${APP_ENV:-production}
+      - ENABLE_HISTORY=${ENABLE_HISTORY:-true}
+      - MAX_PAYLOAD_SIZE=${MAX_PAYLOAD_SIZE:-5000}
+      - DEFAULT_QR_SIZE=${DEFAULT_QR_SIZE:-512}
+    volumes:
+      - qrforge-generated:/app/generated
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: qrforge-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      - VITE_API_URL=http://localhost:${APP_PORT:-8080}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  qrforge-generated:
+    driver: local
