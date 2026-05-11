@@ -26,7 +26,7 @@ RUN apk upgrade --no-cache
 RUN rm /etc/nginx/conf.d/default.conf
 
 # Copy custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # Copy built application from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
