@@ -41,11 +41,11 @@ RUN chown -R nginx:nginx /usr/share/nginx/html && \
 USER nginx
 
 # Expose port
-EXPOSE 80
+EXPOSE 3001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --quiet --tries=1 --spider http://localhost:80 || exit 1
+    CMD wget --quiet --tries=1 --spider http://localhost:3001 || exit 1
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]
